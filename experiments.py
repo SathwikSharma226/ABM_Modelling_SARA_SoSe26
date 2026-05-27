@@ -1,80 +1,64 @@
-"""
-experiments.py
---------------
-Batch-runs that answer the research questions from the lecture slides.
+"""Batch experiments addressing the research questions from slide 46.
 
-Each ``run_*`` function returns a pandas DataFrame so the results can be
-compared / plotted side-by-side. ``run_all()`` writes the comparison
-plots into the ``results/`` directory.
+Each ``compare_*`` function runs the simulation with different parameter
+sets and returns ``{label: DataFrame}``. :func:`run_all` writes
+comparison plots and raw CSVs into the ``results/`` directory.
 """
 
 import os
 
-import pandas as pd
 import matplotlib.pyplot as plt
 
 import config
 from city_model import WasteCityModel
 
 
-# Folder (next to this file) where output plots/CSVs are written.
 RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
 
 
 def _ensure_results_dir():
-    """Create the results folder lazily on first use."""
-    # Idempotent: exist_ok=True so reruns don't fail.
     os.makedirs(RESULTS_DIR, exist_ok=True)
 
 
 def _run_single(num_steps=config.NUM_STEPS, **kwargs):
-    """Run a single simulation with overrides and return the metrics DataFrame."""
-    # Instantiate a fresh model so runs are independent.
+    """Run a single simulation and return its metrics DataFrame."""
     model = WasteCityModel(**kwargs)
-    # Drive the simulation for the requested number of ticks.
     for _ in range(num_steps):
         model.step()
-    # The DataCollector exposes a tidy DataFrame with one row per step.
     return model.datacollector.get_model_vars_dataframe()
 
 
 def compare_cleaner_strategies(num_steps=config.NUM_STEPS):
-    """Run the same world four times with different cleaner strategies."""
-    # Loop over all whitelisted strategies so we can A/B them on equal footing.
-    results = {}
-    for strat in config.CLEANER_STRATEGIES:
-        df = _run_single(num_steps=num_steps, cleaner_strategy=strat)
-        results[strat] = df
-    return results
+    """Run the same world once per cleaner strategy in ``CLEANER_STRATEGIES``."""
+    return {
+        strat: _run_single(num_steps=num_steps, cleaner_strategy=strat)
+        for strat in config.CLEANER_STRATEGIES
+    }
 
 
 def compare_bin_density(num_steps=config.NUM_STEPS):
-    """Compare 'few bins' vs 'many bins' by adjusting the population.
+    """Compare a baseline run against a stressed cleaning capacity.
 
-    We approximate "few bins" by reducing the cleaning interval (more
-    frequent transporter visits compensate) and "many bins" by leaving
-    the default layout. A real-world version would swap layouts.
+    The "few bins" scenario is approximated by reducing cleaner and
+    transporter counts so the system gets visibly strained.
     """
-    # Standard run with the default layout = many-bin baseline.
     many = _run_single(num_steps=num_steps)
-    # Few-bin proxy: fewer cleaners + fewer transporters to stress the system.
     few = _run_single(num_steps=num_steps, num_cleaners=1, num_transporters=0)
     return {"many_bins_baseline": many, "few_bins_stress": few}
 
 
 def compare_tourist_density(num_steps=config.NUM_STEPS):
-    """Low vs. high tourist density."""
+    """Compare runs with low vs. high tourist density."""
     low = _run_single(num_steps=num_steps, num_tourists=2)
     high = _run_single(num_steps=num_steps, num_tourists=30)
     return {"low_tourists": low, "high_tourists": high}
 
 
 def _plot_comparison(results, metric, title, filename):
-    """Plot the same metric across multiple runs into one figure."""
+    """Plot ``metric`` across all runs in ``results`` into one figure."""
     _ensure_results_dir()
     fig, ax = plt.subplots(figsize=(9, 5))
     for label, df in results.items():
-        # Plot each run's series with the run name as legend entry.
         df[metric].plot(ax=ax, label=label)
     ax.set_title(title)
     ax.set_xlabel("Step")
@@ -89,10 +73,9 @@ def _plot_comparison(results, metric, title, filename):
 
 
 def run_all(num_steps=config.NUM_STEPS):
-    """Run all comparison experiments and write plots+CSVs to ``results/``."""
+    """Run all comparison experiments and persist plots + CSVs."""
     _ensure_results_dir()
 
-    # 1. Cleaner-strategy sweep -> central research question of the project.
     strat_results = compare_cleaner_strategies(num_steps=num_steps)
     _plot_comparison(strat_results, "GroundWaste",
                      "Ground waste over time per cleaner strategy",
@@ -101,19 +84,16 @@ def run_all(num_steps=config.NUM_STEPS):
                      "Overflowing bins over time per cleaner strategy",
                      "compare_strategies_overflow.png")
 
-    # 2. Tourist density.
     tour = compare_tourist_density(num_steps=num_steps)
     _plot_comparison(tour, "GroundWaste",
                      "Ground waste: low vs high tourist density",
                      "tourists_ground_waste.png")
 
-    # 3. Bin density / cleaning capacity.
     bin_res = compare_bin_density(num_steps=num_steps)
     _plot_comparison(bin_res, "OverflowingBins",
                      "Overflow under different cleaning capacities",
                      "bin_density_overflow.png")
 
-    # Persist the raw data alongside the plots so users can re-analyse.
     for name, df in strat_results.items():
         df.to_csv(os.path.join(RESULTS_DIR, f"strategy_{name}.csv"))
     for name, df in tour.items():
@@ -125,5 +105,4 @@ def run_all(num_steps=config.NUM_STEPS):
 
 
 if __name__ == "__main__":
-    # Allow running ``python experiments.py`` directly.
     run_all()
