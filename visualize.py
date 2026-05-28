@@ -1,18 +1,9 @@
-"""Matplotlib renderer for the Waste-in-the-City model.
-
-Provides a static snapshot (:func:`draw_city`), an animated runner
-(:func:`animate`) and a metrics-time-series plot (:func:`plot_metrics`).
-A pure Matplotlib approach avoids Mesa's web visualisation, whose API
-shifts between releases.
-"""
-
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from matplotlib.animation import FuncAnimation
 
-
-# Numeric code per cell character; the index also picks the colour below.
+# mapping opf cell char to int for imshow rendering
 CELL_CODE = {
     "#": 0,
     ".": 1,
@@ -35,7 +26,7 @@ CELL_COLOURS = [
 
 
 def _cells_to_array(cells):
-    """Convert the character grid into an ``int`` numpy array for imshow."""
+    """Convert the character grid into an int numpy array for imshow."""
     h = len(cells)
     w = len(cells[0])
     arr = np.zeros((h, w), dtype=int)
@@ -46,10 +37,8 @@ def _cells_to_array(cells):
 
 
 def draw_city(model, ax=None, show_waste=True, show_agents=True):
-    """Render the current state of the city on ``ax`` (or a new figure).
-
-    Overlays ground waste (red squares scaled by amount), bin loads
-    (numeric label) and mobile agents with distinct markers per type.
+    """Render the current state of the city on ax (or a new figure). 
+    Overlays ground waste (red squares scaled by amount), bin loads(numeric label) and mobile agents with distinct markers per type.
     """
     if ax is None:
         _, ax = plt.subplots(figsize=(8, 8))
@@ -62,7 +51,7 @@ def draw_city(model, ax=None, show_waste=True, show_agents=True):
         xs = [pos[0] for pos in model.ground_waste]
         ys = [pos[1] for pos in model.ground_waste]
         sizes = [12 * model.ground_waste[p] for p in model.ground_waste]
-        ax.scatter(xs, ys, s=sizes, c="red", marker="s", alpha=0.7, label="Waste")
+        ax.scatter(xs, ys, s=sizes, c="black", marker="s", alpha=0.7, label="Waste")
 
     for b in model.bins:
         x, y = b.pos
@@ -79,9 +68,9 @@ def draw_city(model, ax=None, show_waste=True, show_agents=True):
         )
         groups = {
             LocalHumanAgent: ("o", "#1b5e20", "Local"),
-            TouristAgent: ("^", "#ef6c00", "Tourist"),
+            TouristAgent: ("^", "red", "Tourist"),
             CleaningServiceAgent: ("D", "#6a1b9a", "Cleaner"),
-            DustTransporterAgent: ("s", "#b71c1c", "Transporter"),
+            DustTransporterAgent: ("s", "white", "Transporter"),
         }
         for cls, (marker, colour, label) in groups.items():
             xs, ys = [], []
@@ -110,9 +99,9 @@ def draw_city(model, ax=None, show_waste=True, show_agents=True):
 
 
 def animate(model, steps=200, interval_ms=80, save_path=None):
-    """Animate ``steps`` ticks of the model.
+    """Animate steps ticks of the model.
 
-    When ``save_path`` is given the animation is written using the Pillow
+    When save_path is given the animation is written using the Pillow
     writer (GIF); otherwise an interactive Matplotlib window opens.
     """
     fig, ax = plt.subplots(figsize=(9, 8))
@@ -123,8 +112,11 @@ def animate(model, steps=200, interval_ms=80, save_path=None):
         draw_city(model, ax=ax)
         return ()
 
-    # blit=False because scatter sizes and legends change between frames.
-    anim = FuncAnimation(fig, update, frames=steps, interval=interval_ms,
+    
+
+    # Make the animation slower for easier interpretation
+    slow_interval_ms = max(200, interval_ms)  # at least 200ms per frame
+    anim = FuncAnimation(fig, update, frames=steps, interval=slow_interval_ms,
                          blit=False, repeat=False)
 
     if save_path:

@@ -1,14 +1,5 @@
-"""Batch experiments addressing the research questions from slide 46.
-
-Each ``compare_*`` function runs the simulation with different parameter
-sets and returns ``{label: DataFrame}``. :func:`run_all` writes
-comparison plots and raw CSVs into the ``results/`` directory.
-"""
-
 import os
-
 import matplotlib.pyplot as plt
-
 import config
 from city_model import WasteCityModel
 

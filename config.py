@@ -1,9 +1,3 @@
-"""Central configuration for the Waste-in-the-City ABM.
-
-All tunable simulation parameters are gathered here so experiments are
-reproducible and every "lever" of the model is visible in one place.
-"""
-
 # Grid / layout
 GRID_WIDTH = 30
 GRID_HEIGHT = 30

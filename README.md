@@ -51,41 +51,78 @@ agents, not the decision process of any single agent.
 
 ## Demo
 
-```text
-$ python run.py --strategy heatmap --steps 200
+```bash
+# Run simulation with default strategy
+python run.py
+
+# Run simulation with a specific cleaning strategy
+python run.py --strategy heatmap
+
+# Run all experiments (writes results to results/)
+python run.py --experiments
 ```
 
-Save a GIF instead of opening a window:
-
-```text
-$ python run.py --strategy heatmap --steps 200 --save-animation city.gif
-```
-
-Run the full experiment battery (writes plots and CSVs to `results/`):
-
-```text
-$ python run.py --experiments
-```
+All configuration (number of agents, steps, etc.) is set in `config.py`.
+Metrics (CSV and PNG) are saved automatically to the `results/` folder after each run.
 
 ---
 
 ## Project Structure
 
-```text
-final_project/
-├── README.md                  # This file
-├── requirements.txt           # Python dependencies
-├── config.py                  # All tunable parameters (single source of truth)
-├── pathfinding.py             # BFS / multi-target BFS / A* used by agents
-├── agents.py                  # The five agent classes
-├── city_model.py              # Mesa Model: layout, scheduler, DataCollector
-├── visualize.py               # Matplotlib renderer (snapshot, animation, metrics)
-├── experiments.py             # Slide-46 comparison experiments
-├── run.py                     # Command-line entry point
-├── city_layouts/
-│   ├── README.md              # Legend for the ASCII layout files
-│   └── default.txt            # Default 30×30 city map
-└── results/                   # Created by `--experiments` (plots + CSVs)
+
+See the class diagram below for code structure and relationships.
+
+```mermaid
+classDiagram
+	WasteCityModel <|-- mesa.Model
+	WasteCityModel o-- LocalHumanAgent
+	WasteCityModel o-- TouristAgent
+	WasteCityModel o-- CleaningServiceAgent
+	WasteCityModel o-- DustBinAgent
+	WasteCityModel o-- DustTransporterAgent
+	WasteCityModel o-- mesa.space.MultiGrid
+	WasteCityModel o-- mesa.time.RandomActivation
+	WasteCityModel o-- mesa.datacollection.DataCollector
+    
+	class WasteCityModel {
+		+cell_types
+		+grid
+		+schedule
+		+bins
+		+attractions
+		+walkable_cells
+		+disposal_points
+		+ground_waste
+		+heatmap
+		+metrics
+		+datacollector
+		+step()
+	}
+	class LocalHumanAgent {
+		+home
+		+work
+		+step()
+	}
+	class TouristAgent {
+		+target
+		+step()
+	}
+	class CleaningServiceAgent {
+		+strategy
+		+route
+		+step()
+	}
+	class DustBinAgent {
+		+capacity
+		+load
+		+is_full
+		+fill_ratio
+		+add_waste()
+		+empty()
+	}
+	class DustTransporterAgent {
+		+step()
+	}
 ```
 
 ### File-by-File
@@ -135,19 +172,13 @@ Dependencies are pinned in [`requirements.txt`](requirements.txt):
 ## Quick Start
 
 ```bash
-# Default simulation with the live animation window
+# Default simulation (uses config.py for all parameters)
 python run.py
 
-# Head-less run for 500 steps + save metrics chart
-python run.py --no-animate --save-metrics metrics.png --steps 500
-
-# Save the animation as a GIF
-python run.py --save-animation city.gif --steps 200
-
-# Try the heatmap (creative extension) cleaner
+# Run simulation with a specific cleaning strategy
 python run.py --strategy heatmap
 
-# Run the full experiment battery
+# Run all experiments (writes results to results/)
 python run.py --experiments
 ```
 
@@ -155,25 +186,100 @@ python run.py --experiments
 
 ## Usage
 
-```text
-usage: run.py [-h] [--steps STEPS]
-              [--strategy {nearest_waste,random_patrol,fixed_route,heatmap}]
-              [--seed SEED] [--locals NUM_LOCALS] [--tourists NUM_TOURISTS]
-              [--cleaners NUM_CLEANERS] [--transporters NUM_TRANSPORTERS]
-              [--no-animate] [--save-animation SAVE_ANIMATION]
-              [--save-metrics SAVE_METRICS] [--experiments]
+```bash
+python run.py                # Run simulation with default strategy
+python run.py --strategy heatmap   # Run simulation with heatmap strategy
+python run.py --experiments        # Run all experiments (writes results to results/)
 ```
 
-| Flag | Description |
-|------|-------------|
-| `--steps` | Number of simulation ticks. |
-| `--strategy` | Cleaner strategy: `nearest_waste`, `random_patrol`, `fixed_route`, `heatmap`. |
-| `--seed` | Random seed for reproducible runs. |
-| `--locals` / `--tourists` / `--cleaners` / `--transporters` | Population overrides. |
-| `--no-animate` | Skip the animation window (head-less). |
-| `--save-animation` | Write the animation as a `.gif` instead of showing a window. |
-| `--save-metrics` | Write the metrics figure to a PNG. |
-| `--experiments` | Run the full experiment battery and exit. |
+### Command-Line Options
+
+| Option         | Type   | Default                        | Meaning                                 |
+|---------------|--------|--------------------------------|-----------------------------------------|
+| `--strategy`  | choice | `config.DEFAULT_CLEANER_STRATEGY` | Cleaner strategy to use.                |
+| `--experiments` | flag | `False`                        | Run the experiment suite and exit.      |
+
+All other options (number of agents, steps, etc.) are set in `config.py`.
+Metrics (CSV and PNG) are saved automatically to the `results/` folder after each run.
+
+## 1. Experiment mode has highest priority
+
+If you use:
+
+```bash
+python run.py --experiments
+```
+
+then the program runs the experiment pipeline and exits. It does **not** run the normal animation/headless simulation path.
+
+## 2. Animation mode is used if either of these is true
+
+- you did **not** specify `--no-animate`
+- or you specified `--save-animation`
+
+That means this still uses animation mode:
+
+```bash
+python run.py --no-animate --save-animation out.gif
+```
+
+because saving an animation requires the animation pipeline.
+
+## 3. Headless mode happens only when:
+
+- `--no-animate` is set
+- and `--save-animation` is **not** set
+- and `--experiments` is **not** set
+
+Example:
+
+```bash
+python run.py --no-animate
+```
+
+# Example Commands
+
+## Default animated run
+
+```bash
+python run.py
+```
+
+## Run 500 steps without animation
+
+```bash
+python run.py --steps 500 --no-animate
+```
+
+## Save animation as GIF
+
+```bash
+python run.py --save-animation city.gif
+```
+
+## Use heatmap cleaner strategy
+
+```bash
+python run.py --strategy heatmap
+```
+
+## Run experiments
+
+```bash
+python run.py --experiments
+```
+
+## Headless run with saved metrics
+
+```bash
+python run.py --no-animate --save-metrics metrics.png
+```
+
+## Animated run with saved GIF and metrics
+
+```bash
+python run.py --save-animation city.gif --save-metrics metrics.png
+```
 
 ---
 

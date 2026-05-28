@@ -1,14 +1,3 @@
-"""Agent classes for the Waste-in-the-City ABM.
-
-Five agent types mirror the lecture specification:
-
-* :class:`LocalHumanAgent`      -- residents with regular movement.
-* :class:`TouristAgent`         -- visitors drifting toward attractions.
-* :class:`CleaningServiceAgent` -- rule-based street cleaners.
-* :class:`DustBinAgent`         -- fixed bin / container infrastructure.
-* :class:`DustTransporterAgent` -- empties full bins, drives to disposal.
-"""
-
 import mesa
 
 from pathfinding import bfs_nearest, bfs_shortest_path
@@ -16,22 +5,21 @@ import config
 
 
 def make_walkable(model, allow_public=True):
-    """Build a predicate that decides whether a cell can be entered.
+    """This is a helper funtion that decides whether a cell is walkable or not for the agents based on the layout.
 
-    Buildings (``#``) always block movement. Bin / container / disposal
-    cells stay walkable so agents can stand on them.
+    Buildings (``#``) always block movement. Bin / container / disposal  cells stay walkable so agents can stand on them.
     """
     width, height = model.grid.width, model.grid.height
     cells = model.cell_types
 
     def walkable(pos):
         x, y = pos
-        if not (0 <= x < width and 0 <= y < height):
+        if not (0 <= x < width and 0 <= y < height): # make sure that the postion is within the bounds of the grid.
             return False
         ch = cells[y][x]
-        if ch == "#":
+        if ch == "#": # buildings are not walkable.
             return False
-        if ch == "P" and not allow_public:
+        if ch == "P" and not allow_public: # check if the cell is public area and make sure public is allowed.
             return False
         return True
 
@@ -39,7 +27,7 @@ def make_walkable(model, allow_public=True):
 
 
 class DustBinAgent(mesa.Agent):
-    """A static bin or container that stores waste up to a fixed capacity."""
+    """A static bin or container that stores waste up to a fixed capacity. Represents regular bins as well as large containers."""
 
     def __init__(self, unique_id, model, capacity, kind="bin"):
         super().__init__(unique_id, model)
@@ -49,20 +37,22 @@ class DustBinAgent(mesa.Agent):
         self.overflow_count = 0
 
     @property
+    # property decorator because it represents a state and not an action.
     def is_full(self):
         return self.load >= self.capacity
 
     @property
-    def fill_ratio(self):
+    # property decorator because it represents a state and not an action.
+    def fill_ratio(self): # Specially for transportors to decide when to empty the bin.
         return self.load / self.capacity if self.capacity else 0.0
 
     def add_waste(self, amount=1):
         """Try to add ``amount`` waste; return the leftover that overflowed."""
-        free = max(0, self.capacity - self.load)
-        accepted = min(free, amount)
-        self.load += accepted
-        leftover = amount - accepted
-        if leftover > 0:
+        free = max(0, self.capacity - self.load) # calculate remaining free capacity
+        accepted = min(free, amount)             # accept as much waste as possible
+        self.load += accepted                    # update current load of the bin
+        leftover = amount - accepted             # compute what did not fit 
+        if leftover > 0:                         # if overflow occured, measure the overflow and return the leftover
             self.overflow_count += 1
         return leftover
 
@@ -73,30 +63,30 @@ class DustBinAgent(mesa.Agent):
         return removed
 
     def step(self):
-        # Passive infrastructure; method kept so Mesa can schedule uniformly.
+        # bins are passive but having step() allows to be scheduled uniformly with other agents
         return
 
-
+# provides common movement helper methods so they do not have to be repeated in every mobile agent class
+# starts with _ since it is only used as a helper class and not to be used publically
 class _MovingAgent(mesa.Agent):
-    """Base class with movement helpers shared by all mobile agents."""
+    """Base class with movement helpers shared by all moving agents."""
 
     def random_walk(self):
         """Move to a random walkable 4-neighbour, if any exists."""
+        
         walkable = make_walkable(self.model)
         x, y = self.pos
-        candidates = [(x + dx, y + dy) for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1))]
-        candidates = [c for c in candidates if walkable(c)]
-        if not candidates:
+        possible_destinations = [(x + dx, y + dy) for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1))]
+        possible_destinations = [c for c in possible_destinations if walkable(c)]
+        if not possible_destinations:
             return
-        self.model.grid.move_agent(self, self.model.random.choice(candidates))
+        self.model.grid.move_agent(self, self.model.random.choice(possible_destinations))
 
     def step_along_path(self, path):
         """Advance one cell along ``path``; return True on successful move.
-
-        ``path`` is expected to start at the current cell, so the next move
-        target is at index 1.
+        ``path`` is expected to start at the current cell, so the next move target is at index 1.
         """
-        if not path or len(path) < 2:
+        if not path or len(path) < 2: # If the path is missing or too short, return False
             return False
         next_cell = path[1]
         if make_walkable(self.model)(next_cell):
@@ -109,52 +99,52 @@ class LocalHumanAgent(_MovingAgent):
     """Resident commuting between home and work, occasionally littering."""
 
     def __init__(self, unique_id, model, home, work):
-        super().__init__(unique_id, model)
+        super().__init__(unique_id, model) # calling super constructor to initialize the agent with unique_id and model as our parameters and not mesa agent's default parameters
         self.home = home
         self.work = work
         self.target = work
         self._path = None
 
     def _ensure_path(self):
-        """Recompute the cached path when missing or stale."""
-        if self._path and len(self._path) > 1 and self._path[0] == self.pos:
+        """Make sure the cached path to the current target exists and is still valid."""
+        if self._path and len(self._path) > 1 and self._path[0] == self.pos: # If there is already a usable path starting from the current position, keep it
             return
-        self._path = bfs_shortest_path(
-            self.pos, self.target, make_walkable(self.model)
-        )
+        self._path = bfs_shortest_path(self.pos, self.target, make_walkable(self.model)) # Otherwise compute a new path to the target and cache it
 
     def _maybe_drop_waste(self):
         """With probability ``LOCAL_WASTE_PROB`` dispose of one waste unit.
-
-        Prefers a nearby non-full bin within ``HUMAN_BIN_SEARCH_RADIUS``;
-        otherwise litters on the current cell.
+        Prefers a nearby non-full bin within ``HUMAN_BIN_SEARCH_RADIUS``, otherwise litters on the current cell.
         """
         if self.model.random.random() >= config.LOCAL_WASTE_PROB:
             return
 
-        bin_positions = [b.pos for b in self.model.bins if not b.is_full]
+        bin_positions = []
+        for b in self.model.bins:
+            if b.is_full == False:
+                bin_positions.append(b.pos)
+
         nearest, path = bfs_nearest(self.pos, bin_positions, make_walkable(self.model))
-        if nearest is not None and path is not None and len(path) - 1 <= config.HUMAN_BIN_SEARCH_RADIUS:
+        if nearest is not None and path is not None and len(path) - 1 <= config.HUMAN_BIN_SEARCH_RADIUS: # path length in nodes includes the starting cell. The number of movement steps is one less.
             for b in self.model.bins:
                 if b.pos == nearest:
                     b.add_waste(1)
                     self.model.metrics["waste_into_bins"] += 1
                     return
-        self.model.add_ground_waste(self.pos, 1)
+        self.model.add_ground_waste(self.pos, 1) # If no suitable bin was found, add waste to the ground at the current position.
 
     def step(self):
-        # Flip the destination once the current target has been reached.
-        if self.pos == self.target:
+        
+        if self.pos == self.target: # Flip the destination once the current target has been reached.
             self.target = self.home if self.target == self.work else self.work
             self._path = None
 
-        self._ensure_path()
-        if not self.step_along_path(self._path):
+        self._ensure_path() # Ensure there is a valid path.
+        if not self.step_along_path(self._path): # If unable to follow the path do a random walk.
             self.random_walk()
         else:
-            self._path = self._path[1:]
+            self._path = self._path[1:] # If movement succeeds remove the first step from the cached path.
 
-        self._maybe_drop_waste()
+        self._maybe_drop_waste() # After moving, drop waste.
 
 
 class TouristAgent(_MovingAgent):
@@ -166,8 +156,6 @@ class TouristAgent(_MovingAgent):
         self._path = None
 
     def _pick_attraction(self):
-        if self.model.attractions:
-            return self.model.random.choice(self.model.attractions)
         return self.model.random.choice(self.model.walkable_cells)
 
     def step(self):
@@ -177,11 +165,9 @@ class TouristAgent(_MovingAgent):
             self._path = None
 
         if not self._path or self._path[0] != self.pos:
-            self._path = bfs_shortest_path(
-                self.pos, self.target, make_walkable(self.model)
-            )
+            self._path = bfs_shortest_path(self.pos, self.target, make_walkable(self.model))
 
-        # 30% chance of meandering instead of following the planned path.
+        # 30% chance of wandering aimlessly instead of following the planned path.
         if self.model.random.random() < 0.3 or not self._path:
             self.random_walk()
         else:
@@ -197,24 +183,30 @@ class CleaningServiceAgent(_MovingAgent):
 
     def __init__(self, unique_id, model, strategy=config.DEFAULT_CLEANER_STRATEGY, route=None):
         super().__init__(unique_id, model)
-        if strategy not in config.CLEANER_STRATEGIES:
-            raise ValueError(f"Unknown cleaner strategy: {strategy}")
         self.strategy = strategy
         self.route = route or []
         self._route_idx = 0
         self.cleaned_units = 0
 
+    # All the functions starting with _ below are strategy based. They return a target cell and a path to it, or (None, None) if no target is currently chosen.
+
     def _choose_target_nearest_waste(self):
-        waste_cells = list(self.model.ground_waste.keys())
+        """find the nearest cell that currently contains waste on the ground.
+        target selection logic for the nearest_waste strategy"""
+
+        waste_cells = list(self.model.ground_waste.keys()) # ground_waste is a dictionary with positions as keys and waste amounts as values. We want only the positions, so we take only the keys.
         return bfs_nearest(self.pos, waste_cells, make_walkable(self.model))
 
+    # no function, only for uniformity, anyway in step(), finally it will go to random if path is none
     def _choose_target_random_patrol(self):
         return None, None
 
     def _choose_target_fixed_route(self):
-        if not self.route:
+        """Follow a fixed cyclic route through the city"""
+
+        if not self.route: # If no route is defined, do nothing.
             return None, None
-        target = self.route[self._route_idx % len(self.route)]
+        target = self.route[self._route_idx % len(self.route)] # Get the current target from the route using modulo to cycle through the route, meaning after the last target, it will come back to the first one.
         path = bfs_shortest_path(self.pos, target, make_walkable(self.model))
         if self.pos == target:
             self._route_idx += 1
@@ -232,7 +224,7 @@ class CleaningServiceAgent(_MovingAgent):
         return hotspot, bfs_shortest_path(self.pos, hotspot, make_walkable(self.model))
 
     def step(self):
-        # Priority action: clean waste already at the current cell.
+        # Priority to clean waste already at the current cell.
         if self.pos in self.model.ground_waste:
             removed = self.model.ground_waste.pop(self.pos)
             self.cleaned_units += removed
@@ -240,7 +232,7 @@ class CleaningServiceAgent(_MovingAgent):
             return
 
         if self.strategy == "nearest_waste":
-            _, path = self._choose_target_nearest_waste()
+            _, path = self._choose_target_nearest_waste() #  the _choose_target_* functions give two values but we only need the path, so using _ to ignore target value.
         elif self.strategy == "random_patrol":
             _, path = self._choose_target_random_patrol()
         elif self.strategy == "fixed_route":
@@ -250,9 +242,9 @@ class CleaningServiceAgent(_MovingAgent):
         else:
             path = None
 
-        if path and self.step_along_path(path):
+        if path and self.step_along_path(path): # If a path exists and movement along it succeeds, keep following it in subsequent steps.
             return
-        self.random_walk()
+        self.random_walk() # If no path or movement fails, do a random walk this turn and reconsider strategy next turn.
 
 
 class DustTransporterAgent(_MovingAgent):
@@ -269,7 +261,12 @@ class DustTransporterAgent(_MovingAgent):
     def _pick_target_bin(self):
         """Select the closest bin above the fullness threshold."""
         threshold = config.TRANSPORTER_FULL_THRESHOLD
-        candidates = [b.pos for b in self.model.bins if b.fill_ratio >= threshold]
+
+        candidates = []
+        for bin_agent in self.model.bins:
+            if bin_agent.fill_ratio >= threshold:
+                candidates.append(bin_agent.pos)
+
         return bfs_nearest(self.pos, candidates, make_walkable(self.model))
 
     def step(self):
@@ -281,7 +278,7 @@ class DustTransporterAgent(_MovingAgent):
             self._path = None
             return
 
-        # Empty the bin we are standing on, then plan return to depot.
+        # Empty the bin where it is standing on, then plan return to depot.
         if self._target_bin is not None and self.pos == self._target_bin:
             for b in self.model.bins:
                 if b.pos == self.pos:
