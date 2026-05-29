@@ -1,0 +1,66 @@
+@startuml
+class DustBinAgent {
+    is_full()
+    fill_ratio()
+    add_waste()
+    empty()
+    step()
+        capacity
+    load
+    kind
+    overflow_count
+    load
+    __init__()
+}
+class _MovingAgent {
+    random_walk()
+    step_along_path()
+        __init__()
+}
+class LocalHumanAgent {
+    _ensure_path()
+    _maybe_drop_waste()
+    step()
+        home
+    work
+    target
+    _path
+    target
+    __init__()
+}
+class TouristAgent {
+    _pick_attraction()
+    step()
+        target
+    _path
+    target
+    __init__()
+}
+class CleaningServiceAgent {
+    _choose_target_nearest_waste()
+    _choose_target_random_patrol()
+    _choose_target_fixed_route()
+    _choose_target_heatmap()
+    step()
+        strategy
+    route
+    _route_idx
+    cleaned_units
+    __init__()
+}
+class DustTransporterAgent {
+    _pick_target_bin()
+    step()
+        depot
+    cargo
+    _target_bin
+    bins_emptied
+    cargo
+    _path
+    __init__()
+}
+_MovingAgent <|-- LocalHumanAgent
+_MovingAgent <|-- TouristAgent
+_MovingAgent <|-- CleaningServiceAgent
+_MovingAgent <|-- DustTransporterAgent
+@enduml
