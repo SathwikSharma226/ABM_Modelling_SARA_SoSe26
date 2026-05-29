@@ -1,0 +1,263 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{geometry}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage{graphicx}
+\geometry{margin=1in}
+\title{Waste in the City --- Agent-Based Model: Technical Report}
+\author{\ }
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section*{General Description of Your Solution}
+This project implements a grid-based Agent-Based Model (ABM) to study urban waste accumulation and management. The model simulates how city structure, agent movement, bin placement, cleaning strategies, and transporter frequency affect waste distribution. The focus is on emergent, city-level outcomes from many interacting rule-based agents. The solution is implemented in Python 3.10+ using the Mesa 2.x framework and Matplotlib for visualization. All configuration is centralized in \texttt{config.py}, and the workflow is automated for both simulation and experiment batch runs.
+
+\section*{Idea}
+\begin{itemize}
+    \item \textbf{Purpose:} To analyze and visualize the dynamics of waste accumulation and removal in a city, focusing on the effects of agent behaviors and infrastructure.
+    \item \textbf{Problem:} How do different cleaning strategies, agent types, and city layouts influence waste buildup and cleanliness in urban environments?
+    \item \textbf{Core Concept:} The model uses rule-based agents (locals, tourists, cleaners, bins, transporters) on a configurable grid to simulate and analyze waste-related phenomena. A creative extension introduces a decaying heatmap that guides cleaners to persistent waste hotspots, enabling the study of both reactive and predictive cleaning strategies.
+\end{itemize}
+
+\section*{Methods}
+\subsection*{Architecture Overview}
+The project is organized into modular Python files, each responsible for a distinct aspect of the simulation:
+\begin{itemize}
+    \item \texttt{agents.py}: Defines all agent classes and their behaviors.
+    \item \texttt{city_model.py}: Orchestrates the simulation, manages the grid, and agent instantiation.
+    \item \texttt{config.py}: Centralizes all simulation parameters.
+    \item \texttt{experiments.py}: Automates batch experiments and comparative analysis.
+    \item \texttt{pathfinding.py}: Implements BFS and A* algorithms for agent navigation.
+    \item \texttt{run.py}: Main entry point and CLI interface.
+    \item \texttt{visualize.py}: Handles rendering, animation, and metrics plotting.
+    \item \texttt{city_layouts/}: Contains ASCII map layouts.
+    \item \texttt{results/}: Stores output metrics and plots.
+\end{itemize}
+
+\subsection*{System Architecture}
+The project is structured for modularity and clarity. Each file encapsulates a major subsystem:
+\begin{itemize}
+    \item \textbf{config.py}: All simulation parameters (grid size, agent counts, probabilities, capacities, strategies, heatmap decay, etc.).
+    \item \textbf{agents.py}: Implements all agent types and their behaviors. Each agent is a class with a \texttt{step()} method, encapsulating its logic.
+    \item \textbf{city_model.py}: The \texttt{WasteCityModel} class manages the grid, agent instantiation, layout parsing, simulation steps, and metrics collection. It also manages the decaying heatmap for the creative extension.
+    \item \textbf{pathfinding.py}: Implements BFS, multi-target BFS, and A* algorithms for agent navigation and target selection.
+    \item \textbf{visualize.py}: Handles rendering of the city grid, agents, and waste; animates the simulation; and plots metrics using Matplotlib.
+    \item \textbf{experiments.py}: Automates batch experiments (strategy comparison, bin density, tourist density), saving results as CSV and PNG.
+    \item \textbf{run.py}: CLI entry point. Supports only \texttt{--strategy} and \texttt{--experiments} options. All other parameters are set in \texttt{config.py}.
+    \item \textbf{city_layouts/}: Contains ASCII map layouts.
+    \item \textbf{results/}: Stores output metrics and plots.
+\end{itemize}
+
+\subsection*{Agent and Model Logic (Pseudocode)}
+\textbf{WasteCityModel Initialization}
+\begin{verbatim}
+function WasteCityModel.__init__(...):
+    load city layout from ASCII file
+    initialize grid and schedule
+    instantiate bins, attractions, walkable cells, disposal points
+    spawn local humans, tourists, cleaners, transporters
+    initialize ground waste and heatmap
+    set up metrics and DataCollector
+\end{verbatim}
+
+\textbf{Agent Step Logic (General)}
+\begin{verbatim}
+for each agent in schedule:
+    agent.step()
+\end{verbatim}
+
+\textbf{LocalHumanAgent}
+\begin{verbatim}
+if at target:
+    swap target between home and work
+ensure path to target exists
+if path is blocked:
+    random walk
+else:
+    move along path
+with probability LOCAL_WASTE_PROB:
+    try to deposit waste in nearest non-full bin within search radius
+    if no bin found:
+        drop waste on ground
+\end{verbatim}
+
+\textbf{TouristAgent}
+\begin{verbatim}
+occasionally pick new attraction as target
+if no path or not at target:
+    compute path to target
+with probability 0.3 or if no path:
+    random walk
+else:
+    move along path
+with probability TOURIST_WASTE_PROB:
+    drop waste on ground
+\end{verbatim}
+
+\textbf{CleaningServiceAgent}
+\begin{verbatim}
+choose strategy:
+    if nearest_waste: BFS to closest waste
+    if random_patrol: random walk
+    if fixed_route: follow cyclic route through bins
+    if heatmap: move toward cell with highest heatmap value
+move toward target if possible
+if on waste cell:
+    clean waste
+update metrics
+\end{verbatim}
+
+\textbf{DustBinAgent}
+\begin{verbatim}
+add_waste(amount):
+    if enough capacity:
+        accept waste
+    else:
+        overflow
+empty():
+    set load to zero
+\end{verbatim}
+
+\textbf{DustTransporterAgent}
+\begin{verbatim}
+find nearest full bin
+move to bin
+empty bin
+move to disposal point
+dispose waste
+update metrics
+\end{verbatim}
+
+\textbf{Pathfinding (BFS/A*)}
+\begin{verbatim}
+BFS(start, goal, walkable):
+    initialize queue with start
+    while queue not empty:
+        pop current cell
+        for each neighbor:
+            if neighbor is goal:
+                reconstruct path
+            if neighbor not visited and walkable:
+                add to queue
+    return path or None
+
+A*(start, goal, walkable):
+    initialize open set with start
+    while open set not empty:
+        pop cell with lowest f-score
+        if cell is goal:
+            reconstruct path
+        for each neighbor:
+            compute tentative g-score
+            if better path found:
+                update scores and parent
+    return path or None
+\end{verbatim}
+
+\textbf{Visualization and Metrics}
+\begin{verbatim}
+draw_city(model):
+    render grid, bins, waste, agents
+animate(model, steps):
+    for each step:
+        model.step()
+        update visualization
+plot_metrics(model):
+    plot time series for ground waste, overflowing bins, bin fill, throughput
+save plots and CSVs to results/
+\end{verbatim}
+
+\textbf{Experiment Automation (Pseudocode for --experiments)}
+\begin{verbatim}
+function run_all_experiments():
+    for each cleaning strategy:
+        run simulation, collect metrics
+    compare bin densities (many vs few):
+        run simulation with default and reduced cleaners/transporters
+    compare tourist densities (low vs high):
+        run simulation with low and high tourist counts
+    for each experiment:
+        plot metrics, save CSV and PNG to results/
+    print summary of experiment outputs
+\end{verbatim}
+
+\section*{Results}
+\begin{itemize}
+    \item \textbf{Outputs:}
+    \begin{itemize}
+        \item Time-series CSVs and PNG plots of key metrics (ground waste, overflowing bins, average bin fill, waste cleaned/disposed).
+        \item Animated or static visualizations of the city and agent actions.
+        \item Experiment results comparing strategies, bin densities, and tourist densities.
+    \end{itemize}
+    \item \textbf{Capabilities:}
+    \begin{itemize}
+        \item Simulates realistic waste dynamics with configurable parameters.
+        \item Supports batch experiments for comparative analysis.
+        \item Visualizes both the simulation and the resulting metrics.
+    \end{itemize}
+    \item \textbf{Evidence:}
+    \begin{itemize}
+        \item Outputs are saved in the \texttt{results/} directory (CSV and PNG files).
+        \item The code and README document the workflow and expected outputs.
+    \end{itemize}
+    \item \textbf{Sample Output Files:}
+    \begin{itemize}
+        \item \texttt{results/compare_strategies_ground_waste.png}
+        \item \texttt{results/compare_strategies_overflow.png}
+        \item \texttt{results/tourists_ground_waste.png}
+        \item \texttt{results/bin_density_overflow.png}
+        \item \texttt{results/strategy\_*.csv}, \texttt{results/tourists\_*.csv}, \texttt{results/bins\_*.csv}
+    \end{itemize}
+\end{itemize}
+
+\section*{Discussion}
+\begin{itemize}
+    \item \textbf{Strengths:}
+    \begin{itemize}
+        \item Modular, well-documented, and extensible codebase.
+        \item All configuration centralized in \texttt{config.py} for reproducibility.
+        \item Automated metrics collection and output.
+        \item Multiple cleaning strategies, including a creative, memory-based approach.
+        \item Clear separation of concerns and evidence of good software engineering practices.
+    \end{itemize}
+    \item \textbf{Limitations:}
+    \begin{itemize}
+        \item No explicit unit or integration tests found.
+        \item Only two CLI options remain; all other parameters require code/config edits.
+        \item Visualization is Matplotlib-based (not interactive web).
+        \item Some advanced behaviors (e.g., agent learning) are not present.
+    \end{itemize}
+    \item \textbf{Assumptions:}
+    \begin{itemize}
+        \item ASCII map layouts are valid and correctly formatted.
+        \item Users are comfortable editing Python configs for parameter changes.
+    \end{itemize}
+    \item \textbf{Risks/Gaps:}
+    \begin{itemize}
+        \item No explicit error handling for malformed configs or layouts.
+        \item No scalability analysis; performance on very large grids is untested.
+        \item No explicit support for real-time or distributed simulation.
+    \end{itemize}
+    \item \textbf{Improvements:}
+    \begin{itemize}
+        \item Add automated tests for core logic.
+        \item Consider a more user-friendly configuration interface.
+        \item Expand documentation with example outputs and troubleshooting.
+        \item Explore more advanced agent behaviors or learning.
+    \end{itemize}
+    \item \textbf{Maintainability/Scalability/Robustness:}
+    \begin{itemize}
+        \item Code is maintainable and modular, but scalability is limited by single-threaded Mesa and Matplotlib rendering.
+        \item Robustness is reasonable for educational/research use, but not production-grade.
+    \end{itemize}
+\end{itemize}
+
+\vspace{1em}
+\noindent\textit{This report was generated based solely on the project’s source code and documentation. For further details or clarifications, please refer to the code comments and README.}
+
+\end{document}
